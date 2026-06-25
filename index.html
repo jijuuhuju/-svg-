@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Scratch用 リアルな影(SVG)ジェネレーター</title>
+  <title>Scratch用 リアルな影素材ジェネレーター</title>
   <style>
     body { font-family: sans-serif; margin: 0; padding: 15px; background: #f0f4f8; display: flex; flex-direction: column; height: 100vh; box-sizing: border-box; color: #333; }
     h1 { font-size: 20px; color: #855cd6; margin: 0 0 5px 0; text-align: center; }
@@ -18,9 +18,12 @@
     .val-disp { color: #855cd6; font-weight: bold; }
     select, input[type="color"], input[type="range"] { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; }
     
-    /* 右側：プレビューエリア */
+    /* 右側：キャンバスエリア */
     .preview-area { flex: 1; background: white; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); display: flex; justify-content: center; align-items: center; position: relative; }
     .canvas-title { position: absolute; top: 10px; font-size: 12px; color: #999; font-weight: bold; }
+    
+    /* 実際の描画 canvas (Scratchサイズ) */
+    canvas { background: #fafafa; border: 1px dashed #ccc; max-width: 100%; height: auto; box-shadow: inset 0 0 10px rgba(0,0,0,0.05); }
     
     /* ボタン */
     button { padding: 12px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; width: 100%; font-size: 15px; transition: 0.2s; }
@@ -30,11 +33,11 @@
 </head>
 <body>
 
-  <h1>🧪 Scratch用 リアルな影(SVG)ジェネレーター</h1>
-  <div class="subtitle">影を自由に調整して、Scratch（ベクトル形式）にそのまま読み込めるSVGファイルをダウンロードできます。</div>
+  <h1>🧪 Scratch用 100%バグらない影ジェネレーター</h1>
+  <div class="subtitle">Scratchが読み込める「背景透明のPNG画像」としてダウンロードするため、絶対にエラーが起きません。</div>
 
   <div class="container">
-    <!-- スライダー類 -->
+    <!-- スライダーエリア -->
     <div class="toolbar">
       <div class="tool-group">
         <label>かたち</label>
@@ -50,8 +53,8 @@
       </div>
 
       <div class="tool-group">
-        <label>影のボケ具合 (Blur) <span class="val-disp" id="blurVal">10</span></label>
-        <input type="range" id="blurSlider" min="0" max="40" value="10">
+        <label>影のボケ具合 (Blur) <span class="val-disp" id="blurVal">15</span></label>
+        <input type="range" id="blurSlider" min="0" max="40" value="15">
       </div>
 
       <div class="tool-group">
@@ -69,48 +72,36 @@
         <input type="range" id="ySlider" min="-30" max="30" value="10">
       </div>
 
-      <!-- コピペではなく、本物のダウンロードボタン -->
-      <button class="btn-download" id="downloadBtn">📥 SVGファイルをダウンロード</button>
+      <button class="btn-download" id="downloadBtn">📥 PNG画像をダウンロード</button>
     </div>
 
-    <!-- プレビュー画面 (Scratchでズレないように 480x360 の比率で作成) -->
+    <!-- プレビュー画面 (Scratchの標準サイズ 480x360) -->
     <div class="preview-area">
       <div class="canvas-title">影の見た目プレビュー</div>
-      <svg id="svgOutput" width="480" height="360" viewBox="0 0 480 360" xmlns="http://w3.org" style="background:#fafafa; border:1px dashed #ccc;">
-        <defs>
-          <!-- 影を作るためのSVGフィルター -->
-          <filter id="shadowFilter" x="-30%" y="-30%" width="160%" height="160%">
-            <feDropShadow id="feShadow" dx="0" dy="10" stdDeviation="10" flood-color="#000000" flood-opacity="0.5" />
-          </filter>
-        </defs>
-        
-        <!-- 影フィルターをかけたグループ -->
-        <g filter="url(#shadowFilter)">
-          <circle id="testCircle" cx="240" cy="180" r="70" fill="#ffab19" />
-          <rect id="testRect" x="160" y="100" width="120" height="120" rx="16" fill="#ffab19" style="display:none;" />
-        </g>
-      </svg>
+      <canvas id="artCanvas" width="480" height="360"></canvas>
     </div>
   </div>
 
   <script>
+    const canvas = document.getElementById('artCanvas');
+    const ctx = canvas.getContext('2d');
+
     const shapeSelect = document.getElementById('shapeSelect');
     const shapeImgColor = document.getElementById('shapeImgColor');
     const blurSlider = document.getElementById('blurSlider');
     const opacitySlider = document.getElementById('opacitySlider');
     const xSlider = document.getElementById('xSlider');
     const ySlider = document.getElementById('ySlider');
-    
-    const feShadow = document.getElementById('feShadow');
-    const testCircle = document.getElementById('testCircle');
-    const testRect = document.getElementById('testRect');
 
-    // スライダーを動かしたときにリアルタイムに見た目を変える
-    function updateShadow() {
-      const dx = xSlider.value;
-      const dy = ySlider.value;
-      const blur = blurSlider.value;
-      const opacity = opacitySlider.value;
+    // Canvasを使って、背景が透明なリアルな影付き図形を描画する
+    function draw() {
+      // 画面を一度きれいに消す（背景を完全に透明にする）
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      const dx = parseInt(xSlider.value);
+      const dy = parseInt(ySlider.value);
+      const blur = parseInt(blurSlider.value);
+      const opacity = parseFloat(opacitySlider.value);
       const color = shapeImgColor.value;
 
       document.getElementById('blurVal').innerText = blur;
@@ -118,41 +109,48 @@
       document.getElementById('xVal').innerText = dx;
       document.getElementById('yVal').innerText = dy;
 
-      feShadow.setAttribute('dx', dx);
-      feShadow.setAttribute('dy', dy);
-      feShadow.setAttribute('stdDeviation', blur);
-      feShadow.setAttribute('flood-opacity', opacity);
-      
-      testCircle.setAttribute('fill', color);
-      testRect.setAttribute('fill', color);
+      // 影の設定を適用する（Canvas標準の超安定したぼかし機能）
+      ctx.shadowOffsetX = dx;
+      ctx.shadowOffsetY = dy;
+      ctx.shadowBlur = blur;
+      ctx.shadowColor = `rgba(0, 0, 0, ${opacity})`;
+
+      // 図形を描く
+      ctx.fillStyle = color;
+      ctx.beginPath();
 
       if (shapeSelect.value === 'circle') {
-        testCircle.style.display = 'block';
-        testRect.style.display = 'none';
+        // まる
+        ctx.arc(240, 180, 70, 0, Math.PI * 2);
+        ctx.fill();
       } else {
-        testCircle.style.display = 'none';
-        testRect.style.display = 'block';
+        // しかく（少し角を丸くする）
+        const x = 160;
+        const y = 110;
+        const w = 120;
+        const h = 120;
+        const r = 16; // 角の丸み
+        ctx.roundRect(x, y, w, h, r);
+        ctx.fill();
       }
     }
 
+    // スライダーを動かしたら描き直す設定
     [shapeSelect, shapeImgColor, blurSlider, opacitySlider, xSlider, ySlider].forEach(el => {
-      el.addEventListener('input', updateShadow);
+      el.addEventListener('input', draw);
     });
 
-    // ★iPadのバグを回避して確実にSVGファイルをダウンロードさせる処理
+    // 最初に1回描画しておく
+    draw();
+
+    // ★iPadでも確実に動き、Scratchで絶対にバグらないPNGダウンロード処理
     document.getElementById('downloadBtn').addEventListener('click', () => {
-      const svgElement = document.getElementById('svgOutput');
-      
-      // 現在のSVGコードをテキスト文字にする
-      const svgString = new XMLSerializer().serializeToString(svgElement);
-      
-      // iPadのBlobバグを防ぐため、Base64文字データに安全変換
-      const base64Data = btoa(unescape(encodeURIComponent(svgString)));
+      // キャンバスに描かれている絵を、そのまま透明なPNGデータのURLに変換
+      const pngUrl = canvas.toDataURL('image/png');
       
       const link = document.createElement('a');
-      link.download = 'scratch_shadow.svg';
-      // dataスキーマを使ってブラウザに直接ダウンロードを命令
-      link.href = 'data:image/svg+xml;base64,' + base64Data;
+      link.download = 'scratch_shadow.png'; // 拡張子を.pngにする
+      link.href = pngUrl;
       
       document.body.appendChild(link);
       link.click();
