@@ -14,6 +14,8 @@
     /* 左側：スライダー設定エリア */
     .toolbar { width: 230px; background: white; padding: 15px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); display: flex; flex-direction: column; gap: 12px; overflow-y: auto; }
     .tool-group { display: flex; flex-direction: column; gap: 4px; }
+    .checkbox-group { display: flex; align-items: center; gap: 8px; margin: 5px 0; cursor: pointer; font-size: 14px; font-weight: bold; }
+    .checkbox-group input { width: 18px; height: 18px; cursor: pointer; }
     label { font-size: 12px; font-weight: bold; color: #555; display: flex; justify-content: space-between; }
     .val-disp { color: #855cd6; font-weight: bold; }
     select, input[type="color"], input[type="range"] { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; }
@@ -39,17 +41,23 @@
   <div class="container">
     <!-- スライダーエリア -->
     <div class="toolbar">
+      <!-- ★追加：図形表示・非表示チェックボックス -->
+      <label class="checkbox-group">
+        <input type="checkbox" id="showShapeCheck" checked>
+        図形（真ん中の色）を表示する
+      </label>
+
+      <div class="tool-group" id="colorGroup">
+        <label>図形の色</label>
+        <input type="color" id="shapeImgColor" value="#ffab19">
+      </div>
+
       <div class="tool-group">
         <label>かたち</label>
         <select id="shapeSelect">
           <option value="circle">まる (○)</option>
           <option value="rect">しかく (□)</option>
         </select>
-      </div>
-
-      <div class="tool-group">
-        <label>図形の色</label>
-        <input type="color" id="shapeImgColor" value="#ffab19">
       </div>
 
       <div class="tool-group">
@@ -86,6 +94,8 @@
     const canvas = document.getElementById('artCanvas');
     const ctx = canvas.getContext('2d');
 
+    const showShapeCheck = document.getElementById('showShapeCheck');
+    const colorGroup = document.getElementById('colorGroup');
     const shapeSelect = document.getElementById('shapeSelect');
     const shapeImgColor = document.getElementById('shapeImgColor');
     const blurSlider = document.getElementById('blurSlider');
@@ -95,9 +105,10 @@
 
     // Canvasを使って、背景が透明なリアルな影付き図形を描画する
     function draw() {
-      // 画面を一度きれいに消す（背景を完全に透明にする）
+      // 画面を一度きれいに消す
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+      const showShape = showShapeCheck.checked;
       const dx = parseInt(xSlider.value);
       const dy = parseInt(ySlider.value);
       const blur = parseInt(blurSlider.value);
@@ -109,49 +120,69 @@
       document.getElementById('xVal').innerText = dx;
       document.getElementById('yVal').innerText = dy;
 
-      // 影の設定を適用する（Canvas標準の超安定したぼかし機能）
+      // 非表示の時は色選択エリアを隠す（UIをすっきりさせる）
+      if (showShape) {
+        colorGroup.style.display = 'flex';
+      } else {
+        colorGroup.style.display = 'none';
+      }
+
+      // 影の設定
       ctx.shadowOffsetX = dx;
       ctx.shadowOffsetY = dy;
       ctx.shadowBlur = blur;
       ctx.shadowColor = `rgba(0, 0, 0, ${opacity})`;
 
-      // 図形を描く
-      ctx.fillStyle = color;
-      ctx.beginPath();
+      // ★ここがポイント：真ん中の図形を非表示にする時の魔法の処理
+      // 影だけを残して、本体の色を透明（塗りつぶさない）にする
+      if (showShape) {
+        ctx.fillStyle = color;
+      } else {
+        // 本体を透明にすると通常は影も消えるため、Canvasの合成モード（destination-out）を使って
+        // 影を描いた後に本体の形だけを「消しゴム」でくり抜く処理を裏で行います。
+        ctx.fillStyle = "black"; 
+      }
 
+      ctx.beginPath();
       if (shapeSelect.value === 'circle') {
-        // まる
         ctx.arc(240, 180, 70, 0, Math.PI * 2);
         ctx.fill();
       } else {
-        // しかく（少し角を丸くする）
-        const x = 160;
-        const y = 110;
-        const w = 120;
-        const h = 120;
-        const r = 16; // 角の丸み
-        ctx.roundRect(x, y, w, h, r);
+        ctx.roundRect(160, 110, 120, 120, 16);
         ctx.fill();
+      }
+
+      // 影だけモードのときは、本体の形を透明にくり抜く
+      if (!showShape) {
+        ctx.save();
+        ctx.globalCompositeOperation = 'destination-out';
+        ctx.shadowColor = 'transparent'; // 影を消した状態の消しゴムにする
+        ctx.fillStyle = 'black';
+        ctx.beginPath();
+        if (shapeSelect.value === 'circle') {
+          ctx.arc(240, 180, 70, 0, Math.PI * 2);
+        } else {
+          ctx.roundRect(160, 110, 120, 120, 16);
+        }
+        ctx.fill();
+        ctx.restore();
       }
     }
 
-    // スライダーを動かしたら描き直す設定
-    [shapeSelect, shapeImgColor, blurSlider, opacitySlider, xSlider, ySlider].forEach(el => {
+    // スライダーやチェックボックスを動かしたら描き直す
+    [showShapeCheck, shapeSelect, shapeImgColor, blurSlider, opacitySlider, xSlider, ySlider].forEach(el => {
       el.addEventListener('input', draw);
     });
 
-    // 最初に1回描画しておく
+    // 最初に1回描画
     draw();
 
-    // ★iPadでも確実に動き、Scratchで絶対にバグらないPNGダウンロード処理
+    // ダウンロード処理
     document.getElementById('downloadBtn').addEventListener('click', () => {
-      // キャンバスに描かれている絵を、そのまま透明なPNGデータのURLに変換
       const pngUrl = canvas.toDataURL('image/png');
-      
       const link = document.createElement('a');
-      link.download = 'scratch_shadow.png'; // 拡張子を.pngにする
+      link.download = 'scratch_shadow.png';
       link.href = pngUrl;
-      
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
